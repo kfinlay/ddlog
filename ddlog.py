@@ -1,69 +1,78 @@
 #!/usr/bin/env python
 
-# usage: ddlog.py -i <Inputfilepath>
-#                 -o <Outputfilepath>
-#                 -s <processingScript>
-#                 -v <Verboseoutput>
+# ddlog.py: Data Delta Log Generates a log update when data are created or
+# changed.
 
+# optional arguments:
+#   -h, --help            show this help message and exit
+#   -i [INFILE], --input [INFILE]
+#                         Raw data file path
+#   -o OUTFILE, --output OUTFILE
+#                         Processed data file path
+#   -s [SCRIPT [SCRIPT ...]], --script [SCRIPT [SCRIPT ...]]
+#                         Processing script command
+#   -p [PROCLOG [PROCLOG ...]], --proclog [PROCLOG [PROCLOG ...]]
+#                         Processing log file path
+#   -l [LOGPATH [LOGPATH ...]], --logpath [LOGPATH [LOGPATH ...]]
+#                         Optional path for log
+#   -v, --verbose
+
+import argparse
 import datetime
 import errno
 import os
-# import sys
-import argparse
+import sys
 import hashlib
 
 
 # parse the arguments
 def parseargs(argv):
     parser = argparse.ArgumentParser(description='''
-                                                 ddlog.py: Data Delta Log
-                                                 \n
-                                                 \n
-                                                 Generates a log update when
-                                                 data are created or changed.
-                                                 ''',
+                                     Data delta log: generate a log update
+                                     when data are created or changed.
+                                     ''',
                                      add_help=True)
     parser.add_argument('-i', '--input',
                         nargs='?',
+                        type=argparse.FileType('r'),
                         dest='infile',
-                        default='',
                         action='store',
-                        help='Raw data file path'
+                        help='raw data file path'
                         )
     parser.add_argument('-o', '--output',
                         required=True,
                         nargs=1,
+                        type=argparse.FileType('a'),
                         dest='outfile',
-                        default='',
                         action='store',
-                        help='Processed data file path'
+                        help='processed data file path'
                         )
     parser.add_argument('-s', '--script',
-                        nargs='*',
+                        nargs='?',
                         dest='script',
-                        default='',
                         action='store',
                         type=str,
-                        help='Processing script command'
+                        help='processing script command'
                         )
     parser.add_argument('-p', '--proclog',
-                        nargs='*',
+                        nargs='?',
+                        type=argparse.FileType('r'),
                         dest='proclog',
-                        default='',
                         action='store',
-                        help='Processing log file path'
+                        help='processing log file path'
                         )
     parser.add_argument('-l', '--logpath',
-                        nargs='*',
+                        nargs='?',
+                        type=argparse.FileType('a'),
                         dest='logpath',
-                        default='',
                         action='store',
-                        help='Optional path for log'
+                        help='optional path for log'
                         )
     parser.add_argument('-v', '--verbose',
                         dest="verbose",
                         default=False,
-                        action="store_true"
+                        action='store_true',
+                        help='increase output verbosity'
                         )
     # parser.add_argument('--version',
     #                     action=version,
@@ -72,15 +81,18 @@ def parseargs(argv):
     #                     default=0.1,
     #                     type=float
     #                     )
-    # options, remainder =
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except:
+        parser.print_help()
+        sys.exit(0)
     return args
 
 
 # identify log file path that has the same folder+basename as input
 # file with log extension appended
 def getlogpath(outfilename, proclog):
-    if proclog == '':
+    if proclog is None:
         base, ext = os.path.splitext(outfilename)
         return base + '.log'
     elif os.path.isfile(proclog) is True:
@@ -111,11 +123,11 @@ def genlogstring(logfilename, infilename, outfilename, script, md5hash):
                  'MD5 hash of processed file: ' + md5hash + '\n' +
                  '\n'
                  )
-    if infilename != '':
+    if infilename is not None:
         logstring = (logstring +
                      'Raw file: ' + infilename + '\n'
                      )
-    if script != '':
+    if script is not None:
         logstring = (logstring +
                      'Processing script: ' + script + '\n'
                      )
@@ -129,10 +141,12 @@ def appendlog(logfilename, logstring):
     return 'Log updated'
 
 if __name__ == '__main__':
+    # args = parseargs([])
     # args = parseargs(['-h'])
     # args = parseargs(sys.argv[1:])
     args = parseargs(['-i', 'tests/infile.txt',
-                      '-o', 'tests/outfile.txt',
+                      # '-o', 'tests/outfile.txt',
+                      '-o', 'tests/outfile3.txt',
                       '-s', 'tests/script.sh',
                       '-v'])
     print(args.infile)
@@ -151,4 +165,3 @@ if __name__ == '__main__':
     print(logstring)
     result = appendlog(logpath, logstring)
     print(result)
-
