@@ -24,6 +24,10 @@ import os
 import sys
 import hashlib
 
+from io import StringIO
+from sas7bdat import SAS7BDAT
+import pandas as pd
+
 
 # parse the arguments
 def parseargs(argv):
@@ -102,8 +106,96 @@ def getlogpath(outfilename, proclog):
                                 proclog)
 
 
-# generate md5 hash of a file
+def getsasvars(filename):
+    with SAS7BDAT(filename) as f:
+        # save header to h
+        h = str(f.header)
+        # # split the file into meta data (above) and varlist table (below)
+        hmeta, hvarlist = h.split('Contents of dataset', 1)
+        # drop the first line (title) of varlist table
+        hvarlist = hvarlist.partition("\n")[2]
+        # # save header meta
+        # text_file1 = open(fmeta, 'w')
+        # text_file1.write('Path: ')
+        # text_file1.write(filename)
+        # text_file1.write('\n')
+        # text_file1.write(hmeta)
+        # text_file1.close()
+        # save header varlist to buffer/memory file
+        # fvarlist = StringIO.StringIO()
+        # fvarlist.write(hvarlist)
+        # read in the varlist file as fixed width and infer columns
+        df = pd.read_fwf(StringIO(hvarlist), colspecs='infer')
+        # fvarlist.close()
+        # drop the row with dashes
+        df = df.drop(df.index[[0]])
+        # convert all variables to string
+        # I was having a hard time exporting to Stata when the type
+        # was mixed (usually missings that were falsely determined to
+        # be floats)
+        df = df.astype(str)
+        varlist = df['Name'].tolist()
+        return h, varlist
+        # # add a column with the full path of the dataset
+        # # df['path'] = re.sub('/', '-', filename)
+        # df['path'] = filename
+        # # add columns with the number of observations and
+        # # the file date modified from the header.meta
+        # obs = ''
+        # moddate = ''
+        # for line in hmeta.splitlines():
+        #     if 'row_count:' in line:
+        #         junk, obs = line.split('row_count: ')
+        #     if 'date_modified: ' in line:
+        #         junk, moddate = line.split('date_modified: ')
+        # df['obs'] = obs
+        # df['moddate'] = moddate
+        # # add a column for data year
+        # m = yearre.search(filename)
+        # try:
+        #     yearstr = m.group()
+        # except Exception:
+        #     yearstr = ''
+        # n = yearrangere.search(filename)
+        # try:
+        #     yearrangestr = n.group()
+        # except Exception:
+        #     yearrangestr = ''
+        # if len(yearrangestr) > len(yearstr):
+        #     df['year'] = yearrangestr
+        # else:
+        #     df['year'] = yearstr
+        # print(df)
+        # try:
+        #     print('Trying to write this Stata data file:', fvarlistdta)
+        #     df.to_stata(fvarlistdta)
+        # # except Exception:
+        # except Exception as e:
+        #     print('Error writing this Stata data file:', fvarlistdta)
+        #     print(df.shape)
+        #     print(df.apply(lambda x: pd.lib.infer_dtype(x.values)))
+        #     print(e)
+        #     # import traceback; traceback.print_exc()
+        # else:
+        #     print('Successfully wrote this Stata data file:', fvarlistdta)
+        #     print(df.shape)
+        #     print(df.apply(lambda x: pd.lib.infer_dtype(x.values)))
+
+
 def md5sum(filename, blocksize=65536):
+    """[generate md5 hash of a file]
+
+    [description]
+
+    Arguments:
+        filename {[type]} -- [description]
+
+    Keyword Arguments:
+        blocksize {number} -- [description] (default: {65536})
+
+    Returns:
+        [str] -- [md5hash in hex]
+    """
     hash = hashlib.md5()
     with open(filename, "rb") as f:
         for block in iter(lambda: f.read(blocksize), b""):
@@ -149,19 +241,24 @@ if __name__ == '__main__':
                       '-o', 'tests/outfile3.txt',
                       '-s', 'tests/script.sh',
                       '-v'])
-    print(args.infile)
+    print(args.infile.name)
+    print(type(args.outfile[0].name))
     print(args.outfile)
-    print(args.outfile[0])
+    print(args.outfile[0].name)
     print(args.script)
     print(args.proclog)
     print(args.logpath)
     print(args.verbose)
-    logpath = getlogpath(args.outfile[0], args.logpath)
+    logpath = getlogpath(args.outfile[0].name, args.logpath)
     print(logpath)
-    md5hash = md5sum(args.outfile[0])
+    md5hash = md5sum(args.outfile[0].name)
     print(md5hash)
-    logstring = genlogstring(logpath, args.infile, args.outfile[0],
-                             args.script[0], md5hash)
+    logstring = genlogstring(logpath, args.infile.name, args.outfile[0].name,
+                             args.script, md5hash)
     print(logstring)
     result = appendlog(logpath, logstring)
     print(result)
+    header, varlist = getsasvars('tests/data/airline.sas7bdat')
+    print(header)
+    print(type(varlist))
+    print(varlist)
