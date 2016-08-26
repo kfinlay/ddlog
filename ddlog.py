@@ -1,25 +1,32 @@
 #!/usr/bin/env python
 
-# ddlog.py
-#
+# usage: ddlog.py [-h] -o OUTFILE [-i [INFILE]] [-s [SCRIPT]] [-p [PROCLOG]]
+#                 [-l [LOGPATH]] [-n [NOTE]]
+
 # Data delta log: generate a log update when data are created or changed.
-#
+# Allows for separate raw and processed data files. Can compare variable lists
+# between those. Tries to use Markdown formatting for later document export.
+
 # optional arguments:
 #   -h, --help            show this help message and exit
 #   -o OUTFILE, --outfile OUTFILE
-#                         processed data file path; the only required argument
+#                         required path to processed data; if in SAS format,
+#                         header and variable list will be reported in log
 #   -i [INFILE], --infile [INFILE]
-#                         raw data file path; if in SAS format, this will
-#                         enable varlist comparisons
+#                         optional path to raw data file; if in SAS format,
+#                         this will enable varlist comparisons
 #   -s [SCRIPT], --script [SCRIPT]
 #                         processing script command; printed in data delta log
-#                         for reference (i.e., not) currently executed
+#                         for reference (i.e., not currently executed)
 #   -p [PROCLOG], --proclog [PROCLOG]
-#                         processing log file path; this will be printed at the
-#                         end of the data delta log
+#                         optional path to processing log; this will be printed
+#                         at the end of the data delta log
 #   -l [LOGPATH], --logpath [LOGPATH]
-#                         optional path for data delta log; default is path of
-#                         processed data file with extension changed to 'log'
+#                         optional path to data delta log; default is path of
+#                         processed data file with extension changed to '.log'
+#   -n [NOTE], --note [NOTE]
+#                         optional note; can be used to describe why and how
+#                         data were created or updated
 
 import argparse
 import datetime
@@ -38,6 +45,10 @@ def parseargs(argv):
     parser = argparse.ArgumentParser(description='''
                                      Data delta log: generate a log update
                                      when data are created or changed.
+                                     Allows for separate raw and processed
+                                     data files. Can compare variable lists
+                                     between those. Tries to use Markdown
+                                     formatting for later document export.
                                      ''',
                                      add_help=True)
     parser.add_argument('-o', '--outfile',
@@ -47,8 +58,9 @@ def parseargs(argv):
                         dest='outfile',
                         action='store',
                         help='''
-                             processed data file path; the
-                             only required argument
+                             required path to processed data; if
+                             in SAS format, header and variable
+                             list will be reported in log
                              '''
                         )
     parser.add_argument('-i', '--infile',
@@ -57,8 +69,9 @@ def parseargs(argv):
                         dest='infile',
                         action='store',
                         help='''
-                             raw data file path; if in SAS format,
-                             this will enable varlist comparisons
+                             optional path to raw data file; if in
+                             SAS format, this will enable varlist
+                             comparisons
                              '''
                         )
     parser.add_argument('-s', '--script',
@@ -68,8 +81,8 @@ def parseargs(argv):
                         type=str,
                         help='''
                              processing script command; printed in
-                             data delta log for reference (i.e., not)
-                             currently executed
+                             data delta log for reference (i.e., not
+                             currently executed)
                              '''
                         )
     parser.add_argument('-p', '--proclog',
@@ -78,8 +91,8 @@ def parseargs(argv):
                         dest='proclog',
                         action='store',
                         help='''
-                             processing log file path; this will be
-                             printed at the end of the data delta log
+                             optional path to processing log; this will
+                             be printed at the end of the data delta log
                              '''
                         )
     parser.add_argument('-l', '--logpath',
@@ -88,16 +101,25 @@ def parseargs(argv):
                         dest='logpath',
                         action='store',
                         help='''
-                             optional path for data delta log; default
-                             is path of processed data file with extension
-                             changed to 'log'
+                             optional path to data delta log; default is
+                             path of processed data file with extension
+                             changed to '.log'
                              '''
                         )
-    try:
-        args = parser.parse_args(argv)
-    except:
+    parser.add_argument('-n', '--note',
+                        nargs='?',
+                        dest='note',
+                        action='store',
+                        type=str,
+                        help='''
+                             optional note; can be used to describe why
+                             and how data were created or updated
+                             '''
+                        )
+    args = parser.parse_args(argv)
+    if not vars(args):
         parser.print_help()
-        sys.exit(0)
+        parser.exit(1)
     return args
 
 
@@ -152,34 +174,25 @@ def md5sum(filename, blocksize=65536):
 
 # write update to top of log file
 def prependlog(logfilename, logstring):
-    with open(logfilename, 'r') as f:
-        oldlog = f.read()
+    try:
+        with open(logfilename, 'r') as f:
+            oldlog = f.read()
+    except:
+        oldlog = ''
     with open(logfilename, 'w') as f:
         f.write(logstring + oldlog)
     return 'Log updated'
 
 if __name__ == '__main__':
-    # args = parseargs([])
-    # args = parseargs(['-h'])
-    # args = parseargs(sys.argv[1:])
-    args = parseargs(['-i', 'tests/data/airline.sas7bdat',
-                      '-o', 'tests/data/airline.sas7bdat',
-                      '-l', 'tests/airline.log',
-                      '-s', 'tests/script.sh',
-                      '-p', 'tests/script.out'
-                      ])
+    args = parseargs(sys.argv[1:])
     logpath = getlogpath(args.outfile[0].name, args.logpath)
     outmd5hash = md5sum(args.outfile[0].name)
     # TODO(kfinlay) Need to verify that files are SAS
-    # format, or skip varlist functions - currently uses try
-    # for SAS files, but could provide more options for format
+    # format, or skip varlist functions - currently uses try/except
+    # for SAS files, but could provide more options for other formats
     # get header and varlist from outfile
     outheader, outvarlist = getsasvars(args.outfile[0].name)
-    # change outvarlist for testing
     if outvarlist is not None:
-        outvarlist.append('newvar1')
-        outvarlist.append('newvar2')
-        outvarlist.pop(0)
         outvarlist.sort()
     if args.infile is not None:
         inmd5hash = md5sum(args.infile.name)
@@ -200,9 +213,9 @@ if __name__ == '__main__':
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     logstring = ('\n' +
                  '# Log update\n\n' +
-                 '  - Date log updated: ' + now + '\n' +
+                 '  - Log revision date: ' + now + '\n' +
                  '  - Processed file\n' +
-                 '    * Path: ' + args.infile.name + '\n' +
+                 '    * Path: ' + args.outfile[0].name + '\n' +
                  '    * MD5 hash: ' + outmd5hash + '\n'
                  )
     if args.infile is not None:
@@ -210,6 +223,11 @@ if __name__ == '__main__':
                      '  - Raw file\n' +
                      '    * Path: ' + args.infile.name + '\n'
                      '    * MD5 hash: ' + inmd5hash + '\n'
+                     )
+    if args.note is not None:
+        logstring = (logstring +
+                     '  - Note\n' +
+                     '    * ' + args.note + '\n'
                      )
     if args.script is not None:
         logstring = (logstring +
@@ -250,7 +268,7 @@ if __name__ == '__main__':
             proclog = f.read()
         logstring = (logstring + '\n' +
                      '## Log file from processing script' + '\n\n' +
-                     '```\n' + proclog + '\n```\n'
+                     '```\n' + proclog.rstrip() + '\n```\n'
                      )
     # prepend the new log entry to data log file
     result = prependlog(logpath, logstring)
