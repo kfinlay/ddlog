@@ -3,18 +3,21 @@
 # usage: ddlog.py [-h] -o OUTFILE [-i [INFILE]] [-s [SCRIPT]] [-p [PROCLOG]]
 #                 [-l [LOGPATH]] [-n [NOTE]]
 
-# Data delta log: generate a log update when data are created or changed.
-# Allows for separate raw and processed data files. Can compare variable lists
-# between those. Tries to use Markdown formatting for later document export.
+# Data delta log: generate a log update when data are created or changed. Allows
+# for separate raw and processed data files. Generates MD5 hashes for data
+# version verification. Compares variable lists if two datasets are specified.
+# Tries to use as much Markdown formatting as possible for later document
+# export.
 
 # optional arguments:
 #   -h, --help            show this help message and exit
 #   -o OUTFILE, --outfile OUTFILE
-#                         required path to processed data; if in SAS format,
-#                         header and variable list will be reported in log
+#                         required path to processed data; if in SAS or Stata
+#                         formats, header and variable list will be reported in
+#                         log
 #   -i [INFILE], --infile [INFILE]
-#                         optional path to raw data file; if in SAS format,
-#                         this will enable varlist comparisons
+#                         optional path to raw data file; if in SAS or Stata
+#                         formats, enables varlist comparisons
 #   -s [SCRIPT], --script [SCRIPT]
 #                         processing script command; printed in data delta log
 #                         for reference (i.e., not currently executed)
@@ -46,9 +49,12 @@ def parseargs(argv):
                                      Data delta log: generate a log update
                                      when data are created or changed.
                                      Allows for separate raw and processed
-                                     data files. Can compare variable lists
-                                     between those. Tries to use Markdown
-                                     formatting for later document export.
+                                     data files. Generates MD5 hashes for
+                                     data version verification. Compares
+                                     variable lists if two datasets are
+                                     specified. Tries to use as much
+                                     Markdown formatting as possible for
+                                     later document export.
                                      ''',
                                      add_help=True)
     parser.add_argument('-o', '--outfile',
@@ -59,8 +65,8 @@ def parseargs(argv):
                         action='store',
                         help='''
                              required path to processed data; if
-                             in SAS format, header and variable
-                             list will be reported in log
+                             in SAS or Stata formats, header and
+                             variable list will be reported in log
                              '''
                         )
     parser.add_argument('-i', '--infile',
@@ -70,7 +76,7 @@ def parseargs(argv):
                         action='store',
                         help='''
                              optional path to raw data file; if in
-                             SAS format, this will enable varlist
+                             SAS or Stata formats, enables varlist
                              comparisons
                              '''
                         )
@@ -152,12 +158,36 @@ def getsasvars(filename):
             # fvarlist.close()
             # drop the row with dashes
             df = df.drop(df.index[[0]])
-            # convert all variables to string
-            # I was having a hard time exporting to Stata when the type
-            # was mixed (usually missings that were falsely determined to
-            # be floats)
-            df = df.astype(str)
             varlist = df['Name'].tolist()
+            return h, varlist
+    except:
+        return None, None
+
+
+# pull header and varlist from Stata format data file
+def getstatavars(filename):
+    try:
+        with pd.read_stata(filename, iterator=True) as sr:
+            # filesizestr = format(os.path.getsize(filename), ',d')
+            htop = [['obs:', str(sr.nobs), sr.data_label],
+                    ['vars:', str(sr.nvar), sr.time_stamp]
+                    # ['size:', filesizestr, 'any notes?']]
+                    ]
+            dfhtop = pd.DataFrame(htop)
+            htopstr = dfhtop.to_string(index=False, header=False)
+            typelist = []
+            for i in range(0,len(sr.dtyplist)):
+                typstr = str(sr.dtyplist[i])
+                typstr = typstr.lstrip("<class 'numpy.")
+                typstr = typstr.rstrip("'>")
+                typelist.append(typstr)
+            hvarziplist = list(zip(sr.varlist, typelist, sr.fmtlist, sr.lbllist, sr.vlblist))
+            dfhvar = pd.DataFrame(hvarziplist)
+            dfhvar.columns = ['variable name', 'stor. type', 'disp. format', 'value label', 'variable label']
+            hvarstr = dfhvar.to_string(index=False)
+            h = 'Contains data from ' + filename + '\n'
+            h = h + htopstr + '\n\n' + hvarstr
+            varlist = sr.varlist
             return h, varlist
     except:
         return None, None
@@ -187,28 +217,31 @@ if __name__ == '__main__':
     args = parseargs(sys.argv[1:])
     logpath = getlogpath(args.outfile[0].name, args.logpath)
     outmd5hash = md5sum(args.outfile[0].name)
-    # TODO(kfinlay) Need to verify that files are SAS
-    # format, or skip varlist functions - currently uses try/except
-    # for SAS files, but could provide more options for other formats
     # get header and varlist from outfile
-    outheader, outvarlist = getsasvars(args.outfile[0].name)
+    if args.outfile[0].name.endswith(".xpt") or args.outfile[0].name.endswith(".sas7bdat"):
+        outheader, outvarlist = getsasvars(args.outfile[0].name)
+    elif args.infile.name.endswith(".dta"):
+        outheader, outvarlist = getstatavars(args.outfile[0].name)
     if outvarlist is not None:
         outvarlist.sort()
     if args.infile is not None:
         inmd5hash = md5sum(args.infile.name)
         # if an infile was specified, then get the header and varlist
-        inheader, invarlist = getsasvars(args.infile.name)
+        if args.infile.name.endswith(".xpt") or args.infile.name.endswith(".sas7bdat"):
+            inheader, invarlist = getsasvars(args.infile.name)
+        elif args.infile.name.endswith(".dta"):
+            inheader, invarlist = getstatavars(args.infile.name)
         # then do the varlist comparison with the outfile
         if invarlist is not None:
             invarlist.sort()
             if outvarlist is not None:
-                commonvars = list(set.intersection(set(invarlist),
-                                                   set(outvarlist)))
-                commonvars.sort()
-                inonlyvars = list(set(invarlist).difference(outvarlist))
-                inonlyvars.sort()
-                outonlyvars = list(set(outvarlist).difference(invarlist))
-                outonlyvars.sort()
+                commonvarlist = list(set.intersection(set(invarlist),
+                                                      set(outvarlist)))
+                commonvarlist.sort()
+                outonlyvarlist = list(set(outvarlist).difference(invarlist))
+                outonlyvarlist.sort()
+                inonlyvarlist = list(set(invarlist).difference(outvarlist))
+                inonlyvarlist.sort()
     # build the string for the new log entry (in Markdown as much as possible)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     logstring = ('\n' +
@@ -234,24 +267,29 @@ if __name__ == '__main__':
                      '  - Processing script: ' + args.script + '\n'
                      )
     if outvarlist is not None:
+        outvarnum = str(len(outvarlist))
         logstring = (logstring + '\n' +
-                     '## Varlists' + '\n\n' +
-                     '  - Variables in processed file' + '\n' +
+                     '## Variable lists (case sensitive, alpha sort)' + '\n\n' +
+                     '  - Variables in processed file (' + outvarnum + ')\n' +
                      '    * ' + ', '.join(outvarlist)
                      )
     if invarlist is not None:
+        invarnum = str(len(invarlist))
         logstring = (logstring + '\n' +
-                     '  - Variables in raw file' + '\n' +
+                     '  - Variables in raw file (' + invarnum + ')\n' +
                      '    * ' + ', '.join(invarlist) + '\n'
                      )
         if outvarlist is not None:
+            commonvarnum = str(len(commonvarlist))
+            outonlyvarnum = str(len(outonlyvarlist))
+            inonlyvarnum = str(len(inonlyvarlist))
             logstring = (logstring +
-                         '  - Variables in both files' + '\n' +
-                         '    * ' + ', '.join(commonvars) + '\n' +
-                         '  - Variables only in processed file' + '\n' +
-                         '    * ' + ', '.join(outonlyvars) + '\n' +
-                         '  - Variables only in raw file' + '\n' +
-                         '    * ' + ', '.join(inonlyvars) + '\n'
+                         '  - Variables in both files (' + commonvarnum + ')\n' +
+                         '    * ' + ', '.join(commonvarlist) + '\n' +
+                         '  - Variables only in processed file (' + outonlyvarnum + ')\n' +
+                         '    * ' + ', '.join(outonlyvarlist) + '\n' +
+                         '  - Variables only in raw file (' + inonlyvarnum + ')\n' +
+                         '    * ' + ', '.join(inonlyvarlist) + '\n'
                          )
     if outheader is not None:
         logstring = (logstring + '\n' +
