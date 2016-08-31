@@ -4,7 +4,7 @@
 #                 [-l [LOGPATH]] [-n [NOTE]]
 
 # Data delta log: generate a log update when data are created or changed. Allows
-# for separate raw and processed data files. Generates MD5 hashes for data
+# for separate raw and processed data files. Generates SHA-256 hashes for data
 # version verification. Compares variable lists if two datasets are specified.
 # Tries to use as much Markdown formatting as possible for later document
 # export.
@@ -49,7 +49,7 @@ def parseargs(argv):
                                      Data delta log: generate a log update
                                      when data are created or changed.
                                      Allows for separate raw and processed
-                                     data files. Generates MD5 hashes for
+                                     data files. Generates SHA-256 hashes for
                                      data version verification. Compares
                                      variable lists if two datasets are
                                      specified. Tries to use as much
@@ -176,14 +176,17 @@ def getstatavars(filename):
             dfhtop = pd.DataFrame(htop)
             htopstr = dfhtop.to_string(index=False, header=False)
             typelist = []
-            for i in range(0,len(sr.dtyplist)):
+            for i in range(0, len(sr.dtyplist)):
                 typstr = str(sr.dtyplist[i])
                 typstr = typstr.lstrip("<class 'numpy.")
                 typstr = typstr.rstrip("'>")
                 typelist.append(typstr)
-            hvarziplist = list(zip(sr.varlist, typelist, sr.fmtlist, sr.lbllist, sr.vlblist))
+            hvarziplist = list(zip(sr.varlist, typelist, sr.fmtlist,
+                                   sr.lbllist, sr.vlblist))
             dfhvar = pd.DataFrame(hvarziplist)
-            dfhvar.columns = ['variable name', 'stor. type', 'disp. format', 'value label', 'variable label']
+            dfhvar.columns = ['variable name', 'stor. type',
+                              'disp. format', 'value label',
+                              'variable label']
             hvarstr = dfhvar.to_string(index=False)
             h = 'Contains data from ' + filename + '\n'
             h = h + htopstr + '\n\n' + hvarstr
@@ -193,9 +196,9 @@ def getstatavars(filename):
         return None, None
 
 
-# generate md5 hash of a file
-def md5sum(filename, blocksize=65536):
-    hash = hashlib.md5()
+# generate sha256 hash of a file
+def sha256sum(filename, blocksize=65536):
+    hash = hashlib.sha256()
     with open(filename, 'rb') as f:
         for block in iter(lambda: f.read(blocksize), b""):
             hash.update(block)
@@ -214,20 +217,30 @@ def prependlog(logfilename, logstring):
     return 'Log updated'
 
 if __name__ == '__main__':
-    args = parseargs(sys.argv[1:])
+    args = parseargs(['-h'])
+    # parse args
+    # args = parseargs(sys.argv[1:])
+    # determine where to write the data delta log
     logpath = getlogpath(args.outfile[0].name, args.logpath)
-    outmd5hash = md5sum(args.outfile[0].name)
+    # calculate sha256 hash for processed file
+    outsha256hash = sha256sum(args.outfile[0].name)
+    # if processed file is in SAS or Stata format,
     # get header and varlist from outfile
-    if args.outfile[0].name.endswith(".xpt") or args.outfile[0].name.endswith(".sas7bdat"):
+    if (args.outfile[0].name.endswith(".xpt") or
+            args.outfile[0].name.endswith(".sas7bdat")):
         outheader, outvarlist = getsasvars(args.outfile[0].name)
-    elif args.infile.name.endswith(".dta"):
+    elif args.outfile[0].name.endswith(".dta"):
         outheader, outvarlist = getstatavars(args.outfile[0].name)
+    # sort varlist of processed file
     if outvarlist is not None:
         outvarlist.sort()
+    # if raw file exists, calculate sha256 hash, gen varlist
+    # and compare with processed file varlist
     if args.infile is not None:
-        inmd5hash = md5sum(args.infile.name)
+        insha256hash = sha256sum(args.infile.name)
         # if an infile was specified, then get the header and varlist
-        if args.infile.name.endswith(".xpt") or args.infile.name.endswith(".sas7bdat"):
+        if (args.infile.name.endswith(".xpt") or
+                args.infile.name.endswith(".sas7bdat")):
             inheader, invarlist = getsasvars(args.infile.name)
         elif args.infile.name.endswith(".dta"):
             inheader, invarlist = getstatavars(args.infile.name)
@@ -249,58 +262,72 @@ if __name__ == '__main__':
                  '  - Log revision date: ' + now + '\n' +
                  '  - Processed file\n' +
                  '    * Path: ' + args.outfile[0].name + '\n' +
-                 '    * MD5 hash: ' + outmd5hash + '\n'
+                 '    * SHA-256 hash: ' + outsha256hash + '\n'
                  )
+    # if a raw file was specified, print name and hash
     if args.infile is not None:
         logstring = (logstring +
                      '  - Raw file\n' +
                      '    * Path: ' + args.infile.name + '\n'
-                     '    * MD5 hash: ' + inmd5hash + '\n'
+                     '    * SHA-256 hash: ' + insha256hash + '\n'
                      )
+    # if a note was specified, print it
     if args.note is not None:
         logstring = (logstring +
                      '  - Note\n' +
                      '    * ' + args.note + '\n'
                      )
+    # if a processing script was specified, print it
     if args.script is not None:
         logstring = (logstring +
                      '  - Processing script: ' + args.script + '\n'
                      )
+    # if processed file varlist is valid, print it
     if outvarlist is not None:
         outvarnum = str(len(outvarlist))
         logstring = (logstring + '\n' +
-                     '## Variable lists (case sensitive, alpha sort)' + '\n\n' +
+                     '## Variable lists (case sensitive, alpha sort)' +
+                     '\n\n' +
                      '  - Variables in processed file (' + outvarnum + ')\n' +
                      '    * ' + ', '.join(outvarlist)
                      )
+    # if a raw file was specified and there is a valid varlist,
+    # print varlists and comparison varlists
     if invarlist is not None:
         invarnum = str(len(invarlist))
         logstring = (logstring + '\n' +
                      '  - Variables in raw file (' + invarnum + ')\n' +
                      '    * ' + ', '.join(invarlist) + '\n'
                      )
+        # if comparisons varlists are available, print those
         if outvarlist is not None:
             commonvarnum = str(len(commonvarlist))
             outonlyvarnum = str(len(outonlyvarlist))
             inonlyvarnum = str(len(inonlyvarlist))
             logstring = (logstring +
-                         '  - Variables in both files (' + commonvarnum + ')\n' +
-                         '    * ' + ', '.join(commonvarlist) + '\n' +
-                         '  - Variables only in processed file (' + outonlyvarnum + ')\n' +
-                         '    * ' + ', '.join(outonlyvarlist) + '\n' +
-                         '  - Variables only in raw file (' + inonlyvarnum + ')\n' +
-                         '    * ' + ', '.join(inonlyvarlist) + '\n'
+                         '  - Variables in both files (' +
+                         commonvarnum + ')\n' + '    * ' +
+                         ', '.join(commonvarlist) + '\n' +
+                         '  - Variables only in processed file (' +
+                         outonlyvarnum + ')\n' + '    * ' +
+                         ', '.join(outonlyvarlist) + '\n' +
+                         '  - Variables only in raw file (' +
+                         inonlyvarnum + ')\n' + '    * ' +
+                         ', '.join(inonlyvarlist) + '\n'
                          )
+    # if processed file has a valid header, print it
     if outheader is not None:
         logstring = (logstring + '\n' +
                      '## Header of processed file' + '\n\n' +
                      '```\n' + outheader + '\n```\n'
                      )
+    # if raw file has a valid header, print it
     if inheader is not None:
         logstring = (logstring + '\n' +
                      '## Header of raw file' + '\n\n' +
                      '```\n' + inheader + '\n```\n'
                      )
+    # if a processing was log specified, print it in data delta log
     if args.proclog is not None:
         with open(args.proclog.name, 'r') as f:
             proclog = f.read()
@@ -308,6 +335,7 @@ if __name__ == '__main__':
                      '## Log file from processing script' + '\n\n' +
                      '```\n' + proclog.rstrip() + '\n```\n'
                      )
-    # prepend the new log entry to data log file
+    # prepend the new log entry to data delta log file
     result = prependlog(logpath, logstring)
+    # was a log successfully updated?
     print(result)

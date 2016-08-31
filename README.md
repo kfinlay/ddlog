@@ -5,7 +5,7 @@ usage: ddlog.py [-h] -o OUTFILE [-i [INFILE]] [-s [SCRIPT]] [-p [PROCLOG]]
                 [-l [LOGPATH]] [-n [NOTE]]
 
 Data delta log: generate a log update when data are created or changed. Allows
-for separate raw and processed data files. Generates MD5 hashes for data
+for separate raw and processed data files. Generates SHA-256 hashes for data
 version verification. Compares variable lists if two datasets are specified.
 Tries to use as much Markdown formatting as possible for later document
 export.
