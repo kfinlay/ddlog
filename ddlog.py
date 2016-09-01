@@ -217,9 +217,8 @@ def prependlog(logfilename, logstring):
     return 'Log updated'
 
 if __name__ == '__main__':
-    args = parseargs(['-h'])
     # parse args
-    # args = parseargs(sys.argv[1:])
+    args = parseargs(sys.argv[1:])
     # determine where to write the data delta log
     logpath = getlogpath(args.outfile[0].name, args.logpath)
     # calculate sha256 hash for processed file
