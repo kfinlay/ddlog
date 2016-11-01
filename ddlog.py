@@ -216,6 +216,7 @@ def prependlog(logfilename, logstring):
         f.write(logstring + oldlog)
     return 'Log updated'
 
+
 if __name__ == '__main__':
     # parse args
     args = parseargs(sys.argv[1:])
